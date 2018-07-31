@@ -1,0 +1,147 @@
+#!/usr/bin/python
+# -*- coding:UTF-8 -*-
+# File:    lishiBaikeSpider.py
+# Date:    2017-09-17 15:48:03
+#
+#set default encode as utf-8
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import json
+import scrapy
+#引入容器
+from lishibaike.lishiBaikeItems import LishiBaikeItem
+
+class LishiBaikeSpider(scrapy.Spider):
+    #区别不同的spider,名字唯一
+    name = "lishiBaikeSpider"
+    #允许访问的域
+    allowed_domains = ["baike.baidu.com"]
+    #爬取地址
+    start_urls=[
+            #"https://baike.baidu.com/wikiui/api/zhixinmap?lemmaId=81515",
+            "https://baike.baidu.com/item/%E8%B5%A4%E5%A3%81%E4%B9%8B%E6%88%98/81515",
+            #"http://www.linuxidc.com/Linux/2015-10/124001.htm"
+    ]
+    #控制爬取的规模
+    crawlCont=0
+    crawlContTotal=20000
+    #爬取方法
+    def parse(self,response):
+        #start_url是历史事件，所以第一个调用的是历史时间解析函数
+        yield scrapy.Request(response.url, callback=self.parse_historyEvent)
+
+    def parse_historyEvent(self,response):
+        #实例一个容器，保存爬取的信息
+        #print(response)
+        print("\tTEST3#################\n")
+        item = LishiBaikeItem()
+        print("\t$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$","历史事件")
+
+        #获得百科词条名字
+        item['title']=''
+        title=response.xpath('/html/body//div[@class="main-content"]//h1')[0]
+        if title:
+            titlename=title.xpath('./text()').extract()[0]
+            #获得词条名字的注释
+            titledesc=title.xpath('./following-sibling::h2')
+            if titledesc:
+                titledesc=titledesc.xpath('./text()').extract()[0]
+            else:
+                titledesc=''
+            print("\tPeople#################\n%s%s" % (titlename,titledesc))
+            item['title']=titlename+titledesc
+            item['titledesc']=titledesc
+
+            #获得词条基本信息
+            #basicInfos={}
+            infostr=''
+            basicInfos=response.xpath('//dt[@class="basicInfo-item name"]')
+            if basicInfos:
+                infostr='{'
+                for info in basicInfos:
+                    infoname=info.xpath('./text()').extract()[0].strip()
+                    infovalue=info.xpath('./following-sibling::dd')[0].xpath('./text()').extract()[0].strip()
+                    infostr+=("\"%s\":\"%s\"," % (infoname,infovalue))
+                    #basicInfos[infoname]=infovalue
+                infostr=infostr.strip(',')+'}'
+            print(infostr)
+            item['basicInfos']=infostr
+
+            #打印出来看看
+            #for k,v in basicInfos.items():
+            #    print("k=%s,v=%s\n" % (k,v))
+        yield item
+        #抓去相关链接（通过右侧链接）
+        #self.parse_righthand_url(response)
+        #self.prase_relatedLinks(itemId)
+        print("\tTEST1sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss")
+        #获取词条id,如https://baike.baidu.com/item/%E8%B5%A4%E5%A3%81%E4%B9%8B%E6%88%98/81515
+        #的81515
+        itemId=response.url[response.url.rfind('/')+1:]
+        relatedUrl="https://baike.baidu.com/wikiui/api/zhixinmap?lemmaId="+itemId
+        print(relatedUrl)
+        print("\tTEST2sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss")
+        yield scrapy.Request(relatedUrl, callback=self.parse_relatedLinks)
+
+
+
+
+    def parse_relatedLinks(self,response):
+        print("\tTEST3sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss")
+        content=json.loads(str(response.text))
+        #content类型是list
+        for tip in content:
+            #tip是相关链接块，如相关事件，历史人物,类型是dict
+            label=tip['tipTitle']#标签,类型是unicode
+            data=tip['data']#词条列表，类型是list
+            if(label=="相关事件" or label=="历史事件"):
+                print(label)
+                for item in data:
+                    #item是每个词条项，类型是dict
+                    url=item['url']#词条地址，类型是unicode
+                    yield scrapy.Request(url,callback=self.parse_historyEvent)
+            else:
+                if(label=="历史人物" or label=="相关人物"):
+                    print(label)
+        #print("%s" % (response.text))
+        print("\tTEST4sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss")
+
+
+        
+
+
+'''
+        #获取右侧相关链接区域div
+        boxs=response.xpath('//*[@id="zhixinWrap"]/div[@class="zhixin-group js-group"]')
+        if(boxs):
+            for box in boxs:
+                #获取每一块链接的div
+                subjectInfo=box.xpath('.//h6/span/text()').extract()[0].strip()
+                subjectInfoStr=("%s" % (subjectInfo))
+                #判断是否属于“相关事件”和 "历史人物"
+                if(subjectInfoStr == "相关事件" or subjectInfoStr == "历史人物"):
+                    urlLinks=box.xpath('.//p[@class="item-title js-name"]/a/@href').extract()
+                    if(urlLinks):
+                        for url in urlLinks:
+                            if(LishiBaikeSpider.crawlCont<LishiBaikeSpider.crawlContTotal):
+                                LishiBaikeSpider.crawlCont+=1
+                                print("############## urllink = %s" % (url))
+                                yield scrapy.Request(url, callback=self.parse)
+                            else:
+                                print("url num is to the limit\n")
+
+'''
+
+
+        #抓取相关链接(通过底部链接)
+        #urlLinks=response.xpath('//a[@class="link-inner"]/@href').extract()
+        #if(urlLinks):
+        #    for url in urlLinks:
+        #        print("############## urllink = %s" % (url))
+        #        #控制抓去规模
+        #        if(LishiBaikeSpider.crawlCont<LishiBaikeSpider.crawlContTotal):
+        #            LishiBaikeSpider.crawlCont+=1
+        #            yield scrapy.Request(url, callback=self.parse)
+
